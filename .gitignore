@@ -1,0 +1,7 @@
+# Ignore
+/labyrinthe/*
+
+# Keep
+!/labyrinthe/Assets/
+!/labyrinthe/Packages/
+!/labyrinthe/ProjectSettings/
