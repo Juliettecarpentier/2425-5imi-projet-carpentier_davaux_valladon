@@ -1,0 +1,13 @@
+# Ignorer le dossier contenant les images de test
+images_test/
+
+# Ignorer le dossier contenant les images rendues
+images_rendu/
+
+# Ignorer les fichiers et dossiers de cache Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignorer tous les fichiers JSON
+*.json
