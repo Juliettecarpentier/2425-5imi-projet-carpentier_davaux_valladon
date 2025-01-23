@@ -5,6 +5,44 @@ import socket
 import json
 
 ################################################################################
+# Filtre de Kalman
+################################################################################
+
+def initialize_kalman_filter():
+    """
+    Initialise un filtre de Kalman pour suivre les paramètres extrinsèques (rvec, tvec).
+    """
+    kalman = cv.KalmanFilter(12, 12)  # 12 états (rvec et tvec)*2, 12 mesures
+    kalman.measurementMatrix = np.eye(12, dtype=np.float32)
+    kalman.transitionMatrix = np.eye(12, dtype=np.float32)
+    kalman.processNoiseCov = np.eye(12, dtype=np.float32) * 1e-3
+    kalman.measurementNoiseCov = np.eye(12, dtype=np.float32) * 5e-2
+    kalman.errorCovPost = np.eye(12, dtype=np.float32)
+    kalman.statePost = np.zeros(12, dtype=np.float32) * 0.5
+    return kalman
+
+def update_kalman_filter(kalman, rvec1, tvec1, rvec2, tvec2):
+    """
+    Met à jour le filtre de Kalman avec les nouvelles observations de rvec et tvec.
+    """
+    # Convertir les données d'entrée en un vecteur de mesure
+    measurement = np.concatenate((rvec1.flatten(), tvec1.flatten(), rvec2.flatten(), tvec2.flatten()), axis=0).astype(np.float32)
+
+    # Prédiction
+    kalman.predict()
+
+    # Correction
+    kalman.correct(measurement)
+
+    # Récupérer les valeurs corrigées
+    rvec1 = kalman.statePost[:3].reshape(3, 1)
+    tvec1 = kalman.statePost[3:6].reshape(3, 1)
+    rvec2 = kalman.statePost[6:9].reshape(3, 1)
+    tvec2 = kalman.statePost[9:12].reshape(3, 1)
+
+    return rvec1, tvec1, rvec2, tvec2
+
+################################################################################
 # Détection des caméras
 ################################################################################
 
@@ -223,41 +261,6 @@ def object_world_transformation(rvec_object, tvec_object, rvec_world, tvec_world
 
     return r_obj, t_obj
 
-def object_points_to_world_points(object_points, rvec_object, tvec_object, rvec_world, tvec_world):
-    """
-    Convertit les points de l'objet en points du repère monde.
-    
-    Parameters:
-        object_points (dict): Dictionnaire des points dans le repère de l'objet.
-        rvec_object (np.ndarray): Vecteur de rotation du repère de l'objet.
-        tvec_object (np.ndarray): Vecteur de translation du repère de l'objet.
-        rvec_world (np.ndarray): Vecteur de rotation du repère monde.
-        tvec_world (np.ndarray): Vecteur de translation du repère monde.
-    
-    Returns:
-        dict: Points transformés dans le repère monde.
-    """
-    world_points = {}
-
-    # Calcul de la matrice de transformation
-    T_object_to_world = rtvec_to_matrix(*object_world_transformation(rvec_object, tvec_object, rvec_world, tvec_world))
-
-    # Passage des points de l'objet au repère monde
-    for id_object, points_object in object_points.items():
-        tag_points = []
-        for point_object in points_object:
-            # Ajout d'une coordonnée homogène
-            point_object = np.append(point_object, 1)
-            # Transformation des points
-            point_world = T_object_to_world @ point_object
-            # Retour à des coordonnées cartésiennes
-            point_world = point_world[:3] / point_world[3]
-            # Ajout du point transformé
-            tag_points.append(point_world)
-        world_points[id_object] = np.array(tag_points, dtype=np.float32)
-
-    return world_points
-
 def display_results(frame, points, rvec, tvec, m_cam, distortion, color=(0, 0, 255)):
     """
     Affiche les résultats de la calibration.
@@ -318,34 +321,19 @@ def main_loop(cap1, config, world_calibration_points, object_calibration_points,
     while cap1.isOpened():
         ret, frame = cap1.read()
         if ret:
-
             # Détection des tags ArUco
             marker_corners_world, marker_IDs_world = detect_aruco_tags(frame, config["ARUCO_DICT_world"], config["ARUCO_PARAMETERS_world"])
             marker_corners_object, marker_IDs_object = detect_aruco_tags(frame, config["ARUCO_DICT_object"], config["ARUCO_PARAMETERS_object"])
+            if len(marker_corners_world) < 4 or len(marker_corners_object) < 4:
+                continue
 
             # Calibration des caméras
             ret1_world, rvec1_world, tvec1_world = calibrate_camera(config, world_calibration_points, marker_corners_world, marker_IDs_world)
             ret1_object, rvec1_object, tvec1_object = calibrate_camera(config, object_calibration_points, marker_corners_object, marker_IDs_object)
             
             if ret1_world and ret1_object:
-
+                rvec1_object, tvec1_object, rvec1_world, tvec1_world = update_kalman_filter(kalman, rvec1_object, tvec1_object, rvec1_world, tvec1_world)  
                 r_obj, t_obj = object_world_transformation(rvec1_object, tvec1_object, rvec1_world, tvec1_world)
-
-                # Calcul des positions des points de la mire objet dans le repère monde
-                world_object_points = object_points_to_world_points(object_calibration_points, rvec1_object, tvec1_object, rvec1_world, tvec1_world)
-                # On ne garde que les coins de la mire objet
-                corners = []
-                ids = [0, 4, 30, 34]
-                for id in ids:
-                    if id == 0:
-                        corners.append(world_object_points[id][0])
-                    elif id == 4:
-                        corners.append(world_object_points[id][1])
-                    elif id == 30:
-                        corners.append(world_object_points[id][3])
-                    elif id == 34:
-                        corners.append(world_object_points[id][2])
-                corners = np.array(corners, dtype=np.float32)
 
                 # Calcul des paramètres extrinsèques de la caméra 2
                 r2, t2 = compute_camera2_from_camera1(rvec1_world, tvec1_world, r12, t12)
@@ -361,7 +349,6 @@ def main_loop(cap1, config, world_calibration_points, object_calibration_points,
                     'U': rm[:, 1].T.tolist(),
                     'R_obj': r_obj.T.tolist()[0],
                     'T_obj': t_obj.T.tolist()[0],
-                    'Corners': corners.tolist(),
                 })
                 sock.sendto(message.encode(), (config["UDP_IP"], config["UDP_PORT"]))
 
@@ -383,6 +370,10 @@ if __name__ == "__main__":
     
     # Configuration du système
     config = configure_system(cameras)
+
+    # Initialisation du filtre de Kalman
+    kalman = initialize_kalman_filter()
+    
     # Initialisation des caméras
     cap1, cap2 = initialize_cameras(config)
     # Initialisation des points de calibration
