@@ -9,7 +9,7 @@ marker_dict = aruco.getPredefinedDictionary(aruco.DICT_6X6_50)
 param_markers = aruco.DetectorParameters()
 
 # utilizes default camera/webcam driver
-cap = cv.VideoCapture(2)
+cap = cv.VideoCapture(0)
 
 # iterate through multiple frames, in a live video feed
 while True:
