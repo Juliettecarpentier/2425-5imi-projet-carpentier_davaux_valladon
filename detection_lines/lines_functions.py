@@ -363,8 +363,41 @@ def normalize_points(image, segments_black, segments_red, circles):
         C = []
 
     return L_black, L_red, C
- 
-def reconstruire_labyrinthe_from_normalize(image, L_black, L_red, C):
+
+def add_objects(image, segments_black, segments_red, circles):
+
+    # On veut mettre 3 objets dans le labyrinthe là où il n'y a pas de segments ni de cercles
+    x_min, y_min, x_max, y_max = find_englobing_rectangle(image, segments_black)
+
+    # On récupère les coordonnées des segments et des cercles
+    segments = segments_black + segments_red
+    objects = []
+
+    # On crée 3 objets
+    for _ in range(3):
+        # On tire aléatoirement les coordonnées de l'objet
+        x = np.random.uniform(x_min + 0.3, x_max - 0.3)
+        y = np.random.uniform(y_min + 0.3, y_max - 0.3)
+
+        val = True
+        while val:
+            val = False
+            for seg in segments:
+                # on met plusieurs points dans le segment 
+                pts = np.linspace(seg[0], seg[1], 10)
+                for pt in pts:
+                    # on vérifie si l'objet n'est pas dans un segment
+                    if segment_length([[x, y], pt]) < 0.2:
+                        x = np.random.uniform(x_min + 0.3, x_max - 0.3)
+                        y = np.random.uniform(y_min + 0.3, y_max - 0.3)
+                        val = True
+                        break
+
+        objects.append((x, y))
+
+    return objects
+
+def reconstruire_labyrinthe_from_normalize(image, L_black, L_red, C, objects):
 
     # Création d'une image blanche de la taille de l'image
     width, height = image.shape[1], image.shape[0]
@@ -386,6 +419,15 @@ def reconstruire_labyrinthe_from_normalize(image, L_black, L_red, C):
     for circle in C:
         x, y = circle
         cv2.circle(image_segments, (int(x), int(y)), 10, (0, 255, 0), 2)
+
+    for obj in objects:
+        x, y = obj
+
+        # passer les coordonnées de [-1;1] à [0;height] et [0;width]
+        x = (x + 1) * width / 2
+        y = (y + 1) * height / 2
+
+        cv2.circle(image_segments, (int(x), int(y)), 10, (255, 0, 0), 2)
     
     # Affichage de l'image
     plt.figure()
@@ -393,12 +435,13 @@ def reconstruire_labyrinthe_from_normalize(image, L_black, L_red, C):
     plt.title("Segments et Cercles Normalisés")
     plt.show()
 
-def export_data_to_json(image, segments_black, segments_red, circles, output_file):
+def export_data_to_json(image, segments_black, segments_red, circles, objects, output_file):
 
     # Construction des données JSON
     data = {
         "input": [],
         "sides": [],
+        "objects": [],
         "walls": []
     }
 
@@ -447,6 +490,19 @@ def export_data_to_json(image, segments_black, segments_red, circles, output_fil
             ],
         }
         data["input"].append(input)
+
+    for obj in objects:
+        # Vérifiez que l'objet a bien un point
+        if len(obj) != 2:
+            print(f"Objet invalide ignoré : {obj}")
+            continue
+        x, y = map(float, obj)
+        object = {
+            "points": [
+                {"x": x, "y": 0, "z": y}
+            ],
+        }
+        data["objects"].append(object)
 
     # Écriture des données dans un fichier JSON
     with open(output_file, "w") as json_file:

@@ -2,7 +2,7 @@ import lines_functions as lf
 import cv2
 
 ############## Paramètres ################
-image_path = 'images_test/labyrinthe/papier/labyrinthe_18.jpg'  # chemin de l'image
+image_path = 'images_test/labyrinthe/papier/labyrinthe_9.jpg'  # chemin de l'image
 
 # paramètres pour la détection des lignes
 e = 0.01                       # paramètre d'approximation des contours en droites
@@ -63,9 +63,12 @@ for segment in L:
 ############## Normalisation des points ################
 L_black_norm, L_red_norm, C_norm = lf.normalize_points(image, L_black, L_red, C)
 
+########### Ajout des objets ################
+obj_norm = lf.add_objects(image, L_black_norm, L_red_norm, C_norm)
+
 ############## Reconstruction du labyrinthe ################
-lf.reconstruire_labyrinthe_from_normalize(image, L_black, L_red, C)
+lf.reconstruire_labyrinthe_from_normalize(image, L_black, L_red, C, obj_norm)
 
 ############## Exportation des segments en json ################
-lf.export_data_to_json(image, L_black_norm, L_red_norm, C_norm, 'labyrinthe.json')
+lf.export_data_to_json(image, L_black_norm, L_red_norm, C_norm, obj_norm, 'labyrinthe.json')
 
